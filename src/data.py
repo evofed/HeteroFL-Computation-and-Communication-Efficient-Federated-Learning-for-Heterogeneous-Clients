@@ -28,6 +28,26 @@ def fetch_dataset(data_name, subset):
     elif data_name in ['PennTreebank', 'WikiText2', 'WikiText103']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\')'.format(data_name))
         dataset['test'] = eval('datasets.{}(root=root, split=\'test\')'.format(data_name))
+    elif data_name == 'OpenImg':
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        dataset['train'] = datasets.OpenImg(root=root, split='train', subset=subset, transform=datasets.Compose([
+            # transforms.RandomCrop(32, padding=4),   # input arguments: length&width of a figure
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,  # convert PIL image or numpy.ndarray to tensor
+            #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]))
+        dataset['test'] = datasets.OpenImg(root=root, split='test', subset=subset, transform=datasets.Compose([
+            transforms.Scale(256),
+            transforms.RandomResizedCrop(224),
+            transforms.ToTensor(),
+            normalize,
+            #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]))
     else:
         raise ValueError('Not valid dataset name')
     print('data ready')
@@ -76,7 +96,31 @@ def iid(dataset, num_users):
     return data_split, label_split
 
 
+def non_iid_openimg(dataset, label_split=None):
+    """
+    same return type as non_iid
+    1. data_split: {user_id: [img_id]}
+    2. label_split: [[label_id]]
+
+    """
+    from collections import defaultdict
+    imgs, targets = dataset.img, dataset.target
+    data_split = defaultdict(list)
+    for idx, img_info in enumerate(imgs):
+        client_id = int(img_info[0])
+        data_split[client_id].append(idx)
+    
+    label_split = [[] for _ in range(len(data_split))]
+    for client_id in data_split:
+        for idx in data_split[client_id]:
+            label_split[client_id].append(int(targets[idx]))
+    
+    return data_split, label_split
+
+
 def non_iid(dataset, num_users, label_split=None):
+    if dataset.data_name == "OpenImg":
+        return non_iid_openimg(dataset, label_split)
     label = np.array(dataset.target)
     cfg['non-iid-n'] = int(cfg['data_split_mode'].split('-')[-1])
     shard_per_user = cfg['non-iid-n']
